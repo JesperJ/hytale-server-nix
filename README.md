@@ -67,6 +67,41 @@ sudo systemctl start hytale-server
 sudo journalctl -fu hytale-server
 ```
 
+### 5. Authenticate the server (`/auth login`)
+
+The first boot logs:
+
+```
+[WARN] [HytaleServer] No server tokens configured. Use /auth login to authenticate.
+```
+
+The server accepts admin commands via **stdin**, but the systemd service has no interactive TTY. To complete the one-time device-code auth, stop the service and run the server interactively as the `hytale` user:
+
+```bash
+sudo systemctl stop hytale-server
+sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-server'
+```
+
+At the server prompt, type:
+
+```
+/auth login
+```
+
+The server prints a URL and code. Open the URL in a browser, sign in with your Hytale account, and enter the code. Once the server confirms auth, cleanly stop it:
+
+```
+/stop
+```
+
+Then restart the systemd service:
+
+```bash
+sudo systemctl start hytale-server
+```
+
+The auth token is cached in `dataDir` and picked up automatically on subsequent starts. The warning should be gone.
+
 ## Updating the game
 
 Re-run the installer whenever a new server build is out — the vendor `start.sh` handles staged updates internally when the service is running, but for a clean update:

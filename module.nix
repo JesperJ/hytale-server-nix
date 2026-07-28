@@ -84,8 +84,11 @@ in
 
     users.groups.${cfg.group} = { };
 
-    # Expose the setup command system-wide so it's easy to run once by hand.
-    environment.systemPackages = [ hytaleSetup ];
+    # Expose both commands system-wide. `hytale-setup` for first install and
+    # updates; `hytale-server` for running the server interactively (needed
+    # for the one-time `/auth login` flow, since the systemd service has no
+    # stdin).
+    environment.systemPackages = [ cfg.package hytaleSetup ];
 
     systemd.tmpfiles.rules = [
       "d '${cfg.dataDir}' 0750 ${cfg.user} ${cfg.group} - -"
