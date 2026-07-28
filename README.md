@@ -132,6 +132,27 @@ sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup --patchline
 
 Available patchlines are listed by the underlying downloader — see [QUICKSTART.md in the Hytale downloader archive](https://downloader.hytale.com/hytale-downloader.zip) for the current list.
 
+## Admin console (`hytalectl`)
+
+The Hytale server takes admin commands (`op`, `world`, `whitelist`, etc.) on its stdin. Since the systemd service has no TTY, this module wires the service's stdin to a FIFO at `/run/hytale-server-console` (owner `hytale`, group `wheel` by default, mode `0620`) and ships a `hytalectl` client:
+
+```bash
+hytalectl op add ByggareBob1
+hytalectl world list
+hytalectl world add sandbox
+hytalectl help
+```
+
+Responses appear in the journal:
+
+```bash
+journalctl -fu hytale-server
+```
+
+A leading `/` is stripped, so `hytalectl /op self` and `hytalectl op self` are equivalent. With no arguments, `hytalectl` forwards its stdin line-by-line — handy for scripting: `printf 'op add alice\nop add bob\n' | hytalectl`.
+
+Anyone in the group named by `consoleGroup` (default `wheel`) can write to the FIFO. Adjust with `services.hytale-server.consoleGroup = "hytale-admins";` if you want a dedicated group.
+
 ## Module options
 
 | Option | Type | Default | Description |
@@ -141,6 +162,7 @@ Available patchlines are listed by the underlying downloader — see [QUICKSTART
 | `user` / `group` | str | `hytale` | System user/group. |
 | `port` | port | `5520` | UDP port. |
 | `openFirewall` | bool | `true` | Open `port` in the firewall (UDP). |
+| `consoleGroup` | str | `"wheel"` | Group allowed to send commands via `hytalectl`. |
 | `heapSize` | str | `"4G"` | Both `-Xms` and `-Xmx`; written to `jvm.options`. |
 | `extraJvmOpts` | list str | `[]` | Extra lines appended to `jvm.options`. |
 

@@ -4,6 +4,8 @@ let
   cfg = config.services.hytale-server;
   hytalePkg = pkgs.callPackage ./package.nix { };
   hytaleSetup = pkgs.callPackage ./setup.nix { };
+  hytalectlPkg = pkgs.callPackage ./console.nix { };
+  consoleFifo = "/run/hytale-server-console";
 in
 {
   options.services.hytale-server = {
@@ -50,6 +52,17 @@ in
       description = "Whether to open the configured UDP port in the firewall.";
     };
 
+    consoleGroup = lib.mkOption {
+      type = lib.types.str;
+      default = "wheel";
+      description = ''
+        Group allowed to send commands to the server via `hytalectl`. The
+        console FIFO at ${consoleFifo} is created with mode `0620`, owner
+        `${"${cfg.user}"}`, group `<this>` — group members can write commands
+        but not read the FD.
+      '';
+    };
+
     heapSize = lib.mkOption {
       type = lib.types.str;
       default = "4G";
@@ -84,11 +97,10 @@ in
 
     users.groups.${cfg.group} = { };
 
-    # Expose both commands system-wide. `hytale-setup` for first install and
-    # updates; `hytale-server` for running the server interactively (needed
-    # for the one-time `/auth login` flow, since the systemd service has no
-    # stdin).
-    environment.systemPackages = [ cfg.package hytaleSetup ];
+    # Expose all three commands system-wide. `hytale-setup` for first install
+    # and updates; `hytale-server` for running the server interactively; and
+    # `hytalectl` for sending admin commands to the running systemd service.
+    environment.systemPackages = [ cfg.package hytaleSetup hytalectlPkg ];
 
     systemd.tmpfiles.rules = [
       "d '${cfg.dataDir}' 0750 ${cfg.user} ${cfg.group} - -"
@@ -96,6 +108,22 @@ in
 
     networking.firewall = lib.mkIf cfg.openFirewall {
       allowedUDPPorts = [ cfg.port ];
+    };
+
+    # Console FIFO — systemd creates it on socket-unit start, wires it to the
+    # service's stdin via `StandardInput=socket`. `hytalectl` writes to it.
+    # Mode 0620 = owner rw, group w only (reading a FIFO the server owns has
+    # no useful semantics, but writing does).
+    systemd.sockets.hytale-server = {
+      description = "Hytale dedicated server console FIFO";
+      wantedBy = [ "sockets.target" ];
+      socketConfig = {
+        ListenFIFO = consoleFifo;
+        SocketMode = "0620";
+        SocketUser = cfg.user;
+        SocketGroup = cfg.consoleGroup;
+        RemoveOnStop = true;
+      };
     };
 
     systemd.services.hytale-server = {
@@ -123,6 +151,14 @@ in
         ExecStart = lib.getExe cfg.package;
         Restart = "on-failure";
         RestartSec = "10s";
+
+        # Wire the socket-provided FIFO as this service's stdin, so anything
+        # `hytalectl` writes to /run/hytale-server-console lands on the JVM's
+        # System.in via start.sh's transparent stdin passthrough.
+        Sockets = "hytale-server.socket";
+        StandardInput = "socket";
+        StandardOutput = "journal";
+        StandardError = "journal";
 
         # Hardening. MemoryDenyWriteExecute is disabled — the JIT needs W+X.
         NoNewPrivileges = true;

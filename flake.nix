@@ -18,6 +18,7 @@
         packages = rec {
           hytale-server = pkgs.callPackage ./package.nix { };
           hytale-setup = pkgs.callPackage ./setup.nix { };
+          hytalectl = pkgs.callPackage ./console.nix { };
           default = hytale-server;
         };
       })
