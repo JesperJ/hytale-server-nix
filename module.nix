@@ -3,6 +3,7 @@
 let
   cfg = config.services.hytale-server;
   hytalePkg = pkgs.callPackage ./package.nix { };
+  hytaleSetup = pkgs.callPackage ./setup.nix { };
 in
 {
   options.services.hytale-server = {
@@ -12,16 +13,16 @@ in
       type = lib.types.package;
       default = hytalePkg;
       defaultText = lib.literalExpression "pkgs.callPackage ./package.nix { }";
-      description = "The hytale-server wrapper package to use.";
+      description = "The hytale-server runtime wrapper package.";
     };
 
     dataDir = lib.mkOption {
       type = lib.types.path;
       default = "/var/lib/hytale-server";
       description = ''
-        Working directory for the server. You must place `HytaleServer.jar`
-        and `Assets.zip` here before starting the service. Worlds, config,
-        mods, and auth tokens are stored here as well.
+        Working directory for the server. Run `hytale-setup` here (as
+        `user`) to install the server files. All worlds, config, mods,
+        backups, and auth tokens are stored here.
       '';
     };
 
@@ -54,34 +55,20 @@ in
       default = "4G";
       example = "8G";
       description = ''
-        JVM heap size (used for both `-Xms` and `-Xmx`). Rough guidance:
-        4G for 1–10 players, 8–12G for 25–50, 16G+ for larger.
+        JVM heap size (used for both `-Xms` and `-Xmx`). Written into
+        `<dataDir>/jvm.options`, which the vendor `start.sh` picks up.
+        Rough guidance: 4G for 1–10 players, 8–12G for 25–50, 16G+ for
+        larger servers.
       '';
     };
 
-    aotCache = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = ''
-        Enable Java 25's AOT cache (`-XX:AOTCache=HytaleServer.aot`).
-        First launch trains the cache; subsequent launches use it.
-      '';
-    };
-
-    extraJavaOpts = lib.mkOption {
+    extraJvmOpts = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
-      example = [ "-XX:+UseZGC" ];
-      description = "Extra JVM arguments.";
-    };
-
-    extraServerArgs = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      example = [ "--allow-op" ];
+      example = [ "-XX:+UseG1GC" ];
       description = ''
-        Extra arguments passed to HytaleServer.jar. Note: `--allow-op` lets
-        any player run `/op self`, so avoid it on public servers.
+        Extra JVM arguments appended to `<dataDir>/jvm.options` (one per
+        line, as the JVM `@-file` syntax expects).
       '';
     };
   };
@@ -97,6 +84,9 @@ in
 
     users.groups.${cfg.group} = { };
 
+    # Expose the setup command system-wide so it's easy to run once by hand.
+    environment.systemPackages = [ hytaleSetup ];
+
     systemd.tmpfiles.rules = [
       "d '${cfg.dataDir}' 0750 ${cfg.user} ${cfg.group} - -"
     ];
@@ -111,12 +101,16 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
 
-      environment = {
-        HYTALE_HEAP_SIZE = cfg.heapSize;
-        HYTALE_AOT_CACHE = if cfg.aotCache then "1" else "0";
-        HYTALE_JAVA_OPTS = lib.concatStringsSep " " cfg.extraJavaOpts;
-        HYTALE_SERVER_ARGS = lib.concatStringsSep " " cfg.extraServerArgs;
-      };
+      # Regenerate jvm.options on every start so option changes take effect
+      # on `nixos-rebuild switch` + service restart (no manual edits needed).
+      preStart = ''
+        cat > ${cfg.dataDir}/jvm.options <<EOF
+        # Managed by services.hytale-server — edits will be overwritten.
+        -Xms${cfg.heapSize}
+        -Xmx${cfg.heapSize}
+        ${lib.concatStringsSep "\n" cfg.extraJvmOpts}
+        EOF
+      '';
 
       serviceConfig = {
         Type = "simple";
@@ -127,7 +121,7 @@ in
         Restart = "on-failure";
         RestartSec = "10s";
 
-        # Hardening
+        # Hardening. MemoryDenyWriteExecute is disabled — the JIT needs W+X.
         NoNewPrivileges = true;
         ProtectSystem = "strict";
         ProtectHome = true;
@@ -139,7 +133,6 @@ in
         RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
         RestrictNamespaces = true;
         LockPersonality = true;
-        MemoryDenyWriteExecute = false; # JIT needs W+X
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
         SystemCallArchitectures = "native";

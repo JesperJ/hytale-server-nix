@@ -1,5 +1,5 @@
 {
-  description = "NixOS module and package for running a Hytale dedicated server";
+  description = "NixOS module and packages for running a Hytale dedicated server";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -17,6 +17,7 @@
       {
         packages = rec {
           hytale-server = pkgs.callPackage ./package.nix { };
+          hytale-setup = pkgs.callPackage ./setup.nix { };
           default = hytale-server;
         };
       })
