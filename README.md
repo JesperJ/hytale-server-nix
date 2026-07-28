@@ -67,52 +67,54 @@ sudo systemctl start hytale-server
 sudo journalctl -fu hytale-server
 ```
 
-### 5. Authenticate the server (`/auth login`)
+### 5. Authenticate the server (one-time, semi-automated)
 
-The first boot logs:
+Fresh installs also need a one-time server-side auth against Hypixel's session infrastructure — separate from the downloader auth in step 3. Without it, you'll see this in the journal on every boot:
 
 ```
 [WARN] [HytaleServer] No server tokens configured. Use /auth login to authenticate.
 ```
 
-The server accepts admin commands via **stdin**, but the systemd service has no interactive TTY. To complete the one-time device-code auth, stop the service and run the server interactively as the `hytale` user:
+`hytale-setup auth` wraps the ceremony. It refuses to run while the systemd service is active, so stop the service first:
 
 ```bash
 sudo systemctl stop hytale-server
-sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-server'
+sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup auth'
 ```
 
-At the server prompt, type:
+The script prints instructions, then launches the server in interactive mode. When you see `Hytale Server Booted!`, type at the prompt (this is an in-server console command, not a shell command):
 
 ```
-/auth login
+/auth login device
 ```
 
-The server prints a URL and code. Open the URL in a browser, sign in with your Hytale account, and enter the code. Once the server confirms auth, cleanly stop it:
+The server prints a URL and a short code. Open the URL in any browser, sign in with your Hytale account, enter the code, and wait for:
 
 ```
-/stop
+[ServerAuthManager] Authentication successful! Mode: OAUTH_STORE
 ```
 
-Then restart the systemd service:
+Then type `/stop`. Control returns to `hytale-setup auth`, which prints the next step:
 
 ```bash
 sudo systemctl start hytale-server
 ```
 
-The auth token is cached in `dataDir` and picked up automatically on subsequent starts. The warning should be gone.
+The token is cached as `Server/auth.enc` (encrypted) and picked up automatically on subsequent starts. The `No server tokens configured` warning should be gone; look for `Session restored from stored credentials` instead.
+
+Other `/auth` subcommands available at the interactive prompt: `status`, `login browser`, `select <profile>`, `logout`, `cancel`, `persistence <type>`. Append `--help` to any for details.
 
 ## Updating the game
 
-Re-run the installer whenever a new server build is out — the vendor `start.sh` handles staged updates internally when the service is running, but for a clean update:
+For a clean update, stop the service and re-run the installer with the `update` subcommand — credentials are cached, so it's non-interactive:
 
 ```bash
 sudo systemctl stop hytale-server
-sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup --update'
+sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup update'
 sudo systemctl start hytale-server
 ```
 
-Credentials are cached, so `--update` is non-interactive.
+The vendor `start.sh` also handles staged updates internally while the service is running (exit code 8 triggers a restart), so most updates land without manual intervention.
 
 ## Updating the OAuth2 credentials
 
