@@ -1,23 +1,27 @@
 { lib
 , writeShellApplication
 , coreutils
+# Compile-time default for the FIFO path. The module passes its own value at
+# callPackage time so the two stay in sync; standalone `nix run .#hytalectl`
+# uses this default.
+, fifoPath ? "/run/hytale-server-console"
 }:
 
 # Small client for the hytale-server console FIFO. Writes commands to the
-# systemd-managed FIFO (default /run/hytale-server-console), which is wired to
-# the service's stdin — the server reads them from stdin and replies via
-# stdout, which lands in the journal.
+# systemd-managed FIFO (default ${fifoPath}), which is wired to the service's
+# stdin — the server reads them from stdin and replies via stdout, which lands
+# in the journal.
 #
 # Usage:
 #   hytalectl world list                    # single command
 #   hytalectl op add SomePlayer
 #   hytalectl < commands.txt                # stream from stdin
-#   HYTALECTL_FIFO=/other/fifo hytalectl …  # override target
+#   HYTALECTL_FIFO=/other/fifo hytalectl …  # runtime override
 writeShellApplication {
   name = "hytalectl";
   runtimeInputs = [ coreutils ];
   text = ''
-    FIFO="''${HYTALECTL_FIFO:-/run/hytale-server-console}"
+    FIFO="''${HYTALECTL_FIFO:-${fifoPath}}"
 
     if [ ! -p "$FIFO" ]; then
       echo "hytalectl: FIFO $FIFO not found." >&2

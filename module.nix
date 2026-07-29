@@ -2,7 +2,12 @@
 
 let
   cfg = config.services.hytale-server;
-  consoleFifo = "/run/hytale-server-console";
+  # StateDirectory hardcodes the on-disk location at /var/lib/<name>. For
+  # servers that need to live on a different filesystem (larger disk, etc.),
+  # bind-mount an existing directory over /var/lib/hytale-server before the
+  # service starts.
+  stateDirName = "hytale-server";
+  dataDir = "/var/lib/${stateDirName}";
 in
 {
   options.services.hytale-server = {
@@ -24,18 +29,24 @@ in
 
     ctlPackage = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ./console.nix { };
-      defaultText = lib.literalExpression "pkgs.callPackage ./console.nix { }";
-      description = "The hytalectl admin-console client package.";
+      default = pkgs.callPackage ./console.nix { inherit (cfg) fifoPath; };
+      defaultText = lib.literalExpression ''
+        pkgs.callPackage ./console.nix { inherit (cfg) fifoPath; }
+      '';
+      description = ''
+        The hytalectl admin-console client package. Defaults to a build of
+        `console.nix` with `fifoPath` set to `cfg.fifoPath`, so the client
+        knows where to write.
+      '';
     };
 
-    dataDir = lib.mkOption {
+    fifoPath = lib.mkOption {
       type = lib.types.path;
-      default = "/var/lib/hytale-server";
+      default = "/run/hytale-server-console";
       description = ''
-        Working directory for the server. Run `hytale-setup` here (as
-        `user`) to install the server files. All worlds, config, mods,
-        backups, and auth tokens are stored here.
+        Path to the console FIFO. Both the systemd socket unit and the
+        `hytalectl` client default to this path — they stay in sync
+        because the module passes this value into both.
       '';
     };
 
@@ -74,7 +85,7 @@ in
       default = "wheel";
       description = ''
         Group allowed to send commands to the server via `hytalectl`. The
-        console FIFO at ${consoleFifo} is created with mode `0620`, owner
+        console FIFO at `${cfg.fifoPath}` is created with mode `0620`, owner
         `${cfg.user}`, group `<this>` — group members can write commands
         but not read the FD.
       '';
@@ -90,9 +101,10 @@ in
       example = "8G";
       description = ''
         JVM heap size (used for both `-Xms` and `-Xmx`). Digits followed by
-        a `k`/`m`/`g` suffix (KB/MB/GB). Written into `<dataDir>/jvm.options`,
-        which the vendor `start.sh` picks up. Rough guidance: 4G for 1–10
-        players, 8–12G for 25–50, 16G+ for larger servers.
+        a `k`/`m`/`g` suffix (KB/MB/GB). Written into
+        `${dataDir}/jvm.options`, which the vendor `start.sh` picks up.
+        Rough guidance: 4G for 1–10 players, 8–12G for 25–50, 16G+ for
+        larger servers.
       '';
     };
 
@@ -101,7 +113,7 @@ in
       default = [ ];
       example = [ "-XX:+UseG1GC" ];
       description = ''
-        Extra JVM arguments appended to `<dataDir>/jvm.options` (one per
+        Extra JVM arguments appended to `${dataDir}/jvm.options` (one per
         line, as the JVM `@-file` syntax expects).
       '';
     };
@@ -110,8 +122,8 @@ in
   config = lib.mkIf cfg.enable {
     users.users.${cfg.user} = {
       isSystemUser = true;
-      home = cfg.dataDir;
-      createHome = false;
+      home = dataDir;
+      createHome = false;   # StateDirectory creates it with the right perms
       group = cfg.group;
       description = "Hytale dedicated server";
     };
@@ -126,10 +138,6 @@ in
     environment.systemPackages = [ cfg.package cfg.ctlPackage ]
       ++ lib.optional (pkgs.stdenv.hostPlatform.system == "x86_64-linux") cfg.setupPackage;
 
-    systemd.tmpfiles.rules = [
-      "d '${cfg.dataDir}' 0750 ${cfg.user} ${cfg.group} - -"
-    ];
-
     networking.firewall = lib.mkIf cfg.openFirewall {
       allowedUDPPorts = [ cfg.port ];
     };
@@ -142,7 +150,7 @@ in
       description = "Hytale dedicated server console FIFO";
       wantedBy = [ "sockets.target" ];
       socketConfig = {
-        ListenFIFO = consoleFifo;
+        ListenFIFO = cfg.fifoPath;
         SocketMode = "0620";
         SocketUser = cfg.user;
         SocketGroup = cfg.consoleGroup;
@@ -167,8 +175,9 @@ in
 
       # Regenerate jvm.options on every start so option changes take effect
       # on `nixos-rebuild switch` + service restart (no manual edits needed).
+      # $STATE_DIRECTORY is set by systemd from StateDirectory=hytale-server.
       preStart = ''
-        cat > ${cfg.dataDir}/jvm.options <<EOF
+        cat > "$STATE_DIRECTORY/jvm.options" <<EOF
         # Managed by services.hytale-server — edits will be overwritten.
         -Xms${cfg.heapSize}
         -Xmx${cfg.heapSize}
@@ -180,7 +189,14 @@ in
         Type = "simple";
         User = cfg.user;
         Group = cfg.group;
-        WorkingDirectory = cfg.dataDir;
+
+        # StateDirectory creates /var/lib/hytale-server owned by User:Group,
+        # exposes it as $STATE_DIRECTORY, and (crucially under ProtectSystem=
+        # strict) grants write access without needing an explicit
+        # ReadWritePaths entry.
+        StateDirectory = stateDirName;
+        StateDirectoryMode = "0750";
+        WorkingDirectory = dataDir;
         ExecStart = lib.getExe cfg.package;
         Restart = "on-failure";
         RestartSec = "10s";
@@ -208,7 +224,7 @@ in
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
         SystemCallArchitectures = "native";
-        ReadWritePaths = [ cfg.dataDir ];
+        # ReadWritePaths not needed — StateDirectory grants write access.
       };
     };
   };

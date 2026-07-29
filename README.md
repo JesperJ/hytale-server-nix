@@ -34,32 +34,37 @@ A Nix flake and NixOS module for running a [Hytale](https://hytale.com) dedicate
 
 ### 2. Import the module and enable the service
 
+`hytale-server` and `hytale-setup` are marked `licenses.unfree` because their purpose is running Hypixel Studios' proprietary Hytale binaries. You need to allow unfree packages in your NixOS config:
+
 ```nix
 {
   imports = [ inputs.hytale-server.nixosModules.default ];
+
+  nixpkgs.config.allowUnfree = true;   # or scope with allowUnfreePredicate
 
   services.hytale-server = {
     enable = true;
     heapSize = "4G";
     openFirewall = true;                     # required for players to reach the server
-    # dataDir = "/var/lib/hytale-server";    # default
     # port = 5520;                           # default (UDP only)
     # extraJvmOpts = [ "-XX:+UseG1GC" ];     # optional
   };
 }
 ```
 
-`nixos-rebuild switch` will create the `hytale` user, the empty `dataDir`, and install `hytale-setup` into `$PATH`. The service will fail to start until you install the server files.
+`nixos-rebuild switch` will create the `hytale` user, create `/var/lib/hytale-server/` (owned by `hytale:hytale`, mode `0750`) via systemd `StateDirectory`, and install `hytale-server`, `hytale-setup`, and `hytalectl` on `$PATH`. The service will fail to start until you install the server files.
+
+The state directory is fixed at `/var/lib/hytale-server`. If you need it on a different disk, bind-mount your target directory over `/var/lib/hytale-server` via `fileSystems` before the service starts.
 
 ### 3. Install the server files
 
-Run the installer once as the `hytale` user, in `dataDir`:
+Run the installer once as the `hytale` user, in the state directory:
 
 ```bash
 sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup'
 ```
 
-On first run this prints an OAuth2 device-code URL and code. Open the URL in a browser (any browser, anywhere), sign in to your Hytale account, and enter the code. The tool caches credentials in `dataDir/.hytale-downloader-credentials.json` and proceeds to download + extract ~3.5 GB.
+On first run this prints an OAuth2 device-code URL and code. Open the URL in a browser (any browser, anywhere), sign in to your Hytale account, and enter the code. The tool caches credentials in `/var/lib/hytale-server/.hytale-downloader-credentials.json` and proceeds to download + extract ~3.5 GB.
 
 ### 4. Start the service
 
@@ -164,15 +169,15 @@ Anyone in the group named by `consoleGroup` (default `wheel`) can write to the F
 | Option | Type | Default | Description |
 | ------ | ---- | ------- | ----------- |
 | `enable` | bool | `false` | Enable the server. |
-| `dataDir` | path | `/var/lib/hytale-server` | Working directory. |
 | `user` / `group` | str | `hytale` | System user/group. |
 | `port` | port | `5520` | UDP port. |
 | `openFirewall` | bool | `false` | Open `port` in the firewall (UDP). Off by default — set `true` unless you're routing traffic in some other way (Tailscale, reverse proxy, etc.). |
 | `consoleGroup` | str | `"wheel"` | Group allowed to send commands via `hytalectl`. |
+| `fifoPath` | path | `/run/hytale-server-console` | Path to the console FIFO; threaded through to `hytalectl` at build time. |
 | `heapSize` | str | `"4G"` | Both `-Xms` and `-Xmx`; written to `jvm.options`. |
 | `extraJvmOpts` | list str | `[]` | Extra lines appended to `jvm.options`. |
 
-The module writes `<dataDir>/jvm.options` on every service start, so option changes take effect on the next `systemctl restart hytale-server` (no manual edits needed).
+State always lives at `/var/lib/hytale-server` (managed by systemd `StateDirectory`). The module writes `jvm.options` there on every service start, so option changes take effect on the next `systemctl restart hytale-server` (no manual edits needed).
 
 ## Files created in `dataDir`
 

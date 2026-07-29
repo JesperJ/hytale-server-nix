@@ -28,7 +28,11 @@ writeShellApplication {
 
   meta = with lib; {
     description = "Runtime wrapper that invokes the vendor start.sh for a Hytale dedicated server";
-    license = licenses.mit;
+    # unfree because the wrapper's sole purpose is running Hypixel Studios'
+    # proprietary Hytale server binaries. The wrapper source is MIT (see the
+    # repository LICENSE); the classification here reflects the package's
+    # intent, matching nixpkgs convention for e.g. `steam`, `factorio`.
+    license = licenses.unfree;
     platforms = platforms.linux;
     mainProgram = "hytale-server";
   };

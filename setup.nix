@@ -132,7 +132,9 @@ writeShellApplication {
 
   meta = with lib; {
     description = "Bootstrap installer for a Hytale dedicated server";
-    license = licenses.mit;
+    # unfree because the wrapper's sole purpose is fetching and running
+    # Hypixel Studios' proprietary Hytale downloader + server payload.
+    license = licenses.unfree;
     # The upstream downloader zip only ships hytale-downloader-linux-amd64.
     # Restrict accordingly; hytale-server and hytalectl remain multi-arch.
     platforms = [ "x86_64-linux" ];
