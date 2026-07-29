@@ -29,14 +29,13 @@ in
 
     ctlPackage = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ./console.nix { inherit (cfg) fifoPath; };
-      defaultText = lib.literalExpression ''
-        pkgs.callPackage ./console.nix { inherit (cfg) fifoPath; }
-      '';
+      default = pkgs.callPackage ./console.nix { };
+      defaultText = lib.literalExpression "pkgs.callPackage ./console.nix { }";
       description = ''
-        The hytalectl admin-console client package. Defaults to a build of
-        `console.nix` with `fifoPath` set to `cfg.fifoPath`, so the client
-        knows where to write.
+        The hytalectl admin-console client package. When left at its default,
+        the module rebuilds it in the `config` block with `fifoPath` set to
+        `services.hytale-server.fifoPath`, so the client's compiled-in
+        default matches the socket's `ListenFIFO`.
       '';
     };
 
@@ -85,9 +84,9 @@ in
       default = "wheel";
       description = ''
         Group allowed to send commands to the server via `hytalectl`. The
-        console FIFO at `${cfg.fifoPath}` is created with mode `0620`, owner
-        `${cfg.user}`, group `<this>` — group members can write commands
-        but not read the FD.
+        console FIFO (see `fifoPath`) is created with mode `0620`, owner
+        `<user>` (see `user`), group `<this>` — group members can write
+        commands but not read the FD.
       '';
     };
 
@@ -120,6 +119,14 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Rebind ctlPackage's default so it inherits cfg.fifoPath — kept out of
+    # the `options` block to avoid the "option default reads config.*"
+    # pattern, which is fragile in the presence of option chains. mkDefault
+    # priority (1000) is lower than an explicit user-set value, so anyone
+    # pinning ctlPackage explicitly still wins.
+    services.hytale-server.ctlPackage = lib.mkDefault
+      (pkgs.callPackage ./console.nix { inherit (cfg) fifoPath; });
+
     users.users.${cfg.user} = {
       isSystemUser = true;
       home = dataDir;

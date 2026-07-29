@@ -39,5 +39,35 @@
 
       nixosModules.hytale-server = hytaleModule;
       nixosModules.default = hytaleModule;
+
+      # `nix flake check` runs every derivation here — smoke-tests each
+      # package build and a synthetic NixOS evaluation of the module, so
+      # regressions in either surface as a check failure rather than a
+      # runtime surprise for downstream users.
+      checks = forAllSystems (system:
+        let
+          pkgs = pkgsFor system;
+          pkgsHere = self.packages.${system};
+          moduleEval = (nixpkgs.lib.nixosSystem {
+            inherit system;
+            modules = [
+              hytaleModule
+              {
+                boot.loader.grub.device = "nodev";
+                fileSystems."/" = { device = "none"; fsType = "tmpfs"; };
+                system.stateVersion = "25.11";
+                nixpkgs.config.allowUnfreePredicate = _: true;
+                services.hytale-server.enable = true;
+              }
+            ];
+          }).config.system.build.toplevel;
+        in
+        {
+          hytale-server = pkgsHere.hytale-server;
+          hytalectl = pkgsHere.hytalectl;
+          nixos-module = moduleEval;
+        } // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          hytale-setup = pkgsHere.hytale-setup;
+        });
     };
 }

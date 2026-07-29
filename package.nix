@@ -2,7 +2,6 @@
 , writeShellApplication
 , jdk25_headless
 , bash
-, coreutils
 }:
 
 # Thin runtime wrapper: puts `java` on PATH and hands off to the vendor's
@@ -14,7 +13,7 @@
 # of that, and it shaves ~250 MB off the closure vs. the full JDK.
 writeShellApplication {
   name = "hytale-server";
-  runtimeInputs = [ jdk25_headless bash coreutils ];
+  runtimeInputs = [ jdk25_headless bash ];
   text = ''
     # The working directory (systemd sets it) must contain the extracted
     # server.zip layout: start.sh, Server/HytaleServer.jar, Assets.zip.
