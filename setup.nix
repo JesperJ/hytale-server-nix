@@ -6,17 +6,13 @@
 , findutils
 }:
 
-# Installer / updater for the Hytale dedicated server.
+# Bootstrap installer for the Hytale dedicated server.
 #
-# Subcommands:
-#   install (default)  Fetch the Hytale downloader, run its OAuth2 device-code
-#                      flow (interactive on first use), and extract server.zip
-#                      into the current directory.
-#   update             Alias for `install --update` (non-interactive; assumes
-#                      cached credentials).
-#
-# Server-side auth (`/auth login device`) is done via `hytalectl` against the
-# running systemd service — no dance required.
+# Fetches Hytale's official downloader, runs it (OAuth2 device-code auth on
+# first use), and extracts server.zip into the current directory. Only needed
+# for the first-ever install — subsequent updates use `hytalectl update ...`
+# against the running service (server uses its own cached session credentials,
+# no downloader needed).
 #
 # Run as the hytale user in the service's dataDir, e.g.:
 #   sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup'
@@ -35,59 +31,40 @@ writeShellApplication {
 
     usage() {
       cat <<EOF
-    hytale-setup — install or update a Hytale dedicated server.
+    hytale-setup — bootstrap a Hytale dedicated server (first-ever install).
 
     Usage:
-      hytale-setup [install] [--patchline <name>] [--force-auth]
-      hytale-setup update    [--patchline <name>]
+      hytale-setup [--patchline <name>] [--force-auth]
       hytale-setup --help
-
-    Subcommands:
-      install (default)   Download the server files. Runs OAuth2 device-code
-                          auth on first use (interactive), non-interactive
-                          afterwards.
-      update              Refresh server files from the latest patchline build.
-                          Fails if no credentials are cached.
 
     Options:
       -p, --patchline <name>   Patchline to download (default: release)
       --force-auth             Delete cached downloader credentials and
-                               re-authenticate against the downloader (not to
-                               be confused with server-side /auth — use
-                               \`hytalectl auth login device\` for that).
+                               re-authenticate against the downloader.
       -h, --help               Show this help
+
+    After install:
+      - Start the service:    sudo systemctl start $SERVICE
+      - Authenticate:         hytalectl auth login device
+      - Watch journal:        journalctl -fu $SERVICE
+
+    Updates are handled in-server — see \`hytalectl update --help\`.
 
     Files created in the current directory:
       .hytale-downloader                    The Hytale downloader binary (~9 MB)
       .hytale-downloader-credentials.json   OAuth2 tokens for the downloader
       start.sh, Server/, Assets.zip         Extracted server files
-      Server/auth.enc                       Encrypted server-side auth token
-                                            (created after 'hytalectl auth login device')
 
     See: https://downloader.hytale.com/hytale-downloader.zip (QUICKSTART.md)
     EOF
     }
 
-    # Parse subcommand (first positional) — default `install`.
-    SUBCMD="install"
-    case "''${1:-}" in
-      install|update)  SUBCMD="$1"; shift ;;
-      -h|--help)       usage; exit 0 ;;
-      "")              ;;
-      -*)              ;;  # Leave flag parsing to the loop below.
-      *)               echo "hytale-setup: unknown subcommand: $1" >&2
-                       usage >&2; exit 2 ;;
-    esac
-
     PATCHLINE="release"
     FORCE_AUTH=0
-    UPDATE_ONLY=0
-    [ "$SUBCMD" = "update" ] && UPDATE_ONLY=1
 
     while [ $# -gt 0 ]; do
       case "$1" in
         -p|--patchline) PATCHLINE="$2"; shift 2 ;;
-        -u|--update)    UPDATE_ONLY=1; shift ;;   # legacy — pre-subcommand form
         --force-auth)   FORCE_AUTH=1; shift ;;
         -h|--help)      usage; exit 0 ;;
         *)              echo "hytale-setup: unknown argument: $1" >&2
@@ -115,11 +92,6 @@ writeShellApplication {
     #    and blocks until the user completes login in a browser.
     SERVER_ZIP="$STAGING/server.zip"
     echo "==> Downloading server files (patchline: $PATCHLINE)"
-    if [ ! -f "$CREDS" ] && [ "$UPDATE_ONLY" = "1" ]; then
-      echo "hytale-setup: 'update' was requested but no cached credentials at $CREDS" >&2
-      echo "hytale-setup: run 'hytale-setup install' once to authenticate interactively" >&2
-      exit 1
-    fi
     "$DOWNLOADER_BIN" \
       -credentials-path "$CREDS" \
       -patchline "$PATCHLINE" \
@@ -153,7 +125,7 @@ writeShellApplication {
   '';
 
   meta = with lib; {
-    description = "Installer / updater for a Hytale dedicated server";
+    description = "Bootstrap installer for a Hytale dedicated server";
     license = licenses.mit;
     platforms = platforms.linux;
     mainProgram = "hytale-setup";

@@ -54,11 +54,7 @@ writeShellApplication {
 
     send "$*"
 
-    cat <<'EOF' >&2
-
-hytalectl: command sent. Watch the response with:
-  journalctl -fu hytale-server
-EOF
+    echo "hytalectl: command sent. Watch response with: journalctl -fu hytale-server" >&2
   '';
 
   meta = with lib; {

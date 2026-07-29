@@ -103,31 +103,32 @@ Other `/auth` subcommands available: `hytalectl auth status`, `hytalectl auth lo
 
 ## Updating the game
 
-For a clean update, stop the service and re-run the installer with the `update` subcommand — credentials are cached, so it's non-interactive:
+The server updates itself in-place — no `sudo systemctl stop/start`, no re-download of the whole 3.5 GB. Trigger it via `hytalectl`:
 
 ```bash
-sudo systemctl stop hytale-server
-sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup update'
-sudo systemctl start hytale-server
+hytalectl update check              # any update available?
+hytalectl update download           # stage it
+hytalectl update apply --confirm    # apply + restart (via start.sh's exit-code-8 loop)
+journalctl -fu hytale-server        # watch progress
 ```
 
-The vendor `start.sh` also handles staged updates internally while the service is running (exit code 8 triggers a restart), so most updates land without manual intervention.
+Other subcommands: `hytalectl update status`, `hytalectl update cancel`. To change patchlines:
 
-## Updating the OAuth2 credentials
+```bash
+hytalectl update patchline pre-release
+hytalectl update download
+hytalectl update apply --confirm
+```
 
-If auth breaks (e.g. tokens revoked):
+## Re-authenticating the downloader
+
+`hytale-setup` uses your Hytale account's OAuth2 tokens to fetch the initial server payload. If those tokens ever break (revoked, expired beyond refresh), and you need to re-bootstrap:
 
 ```bash
 sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup --force-auth'
 ```
 
-## Selecting a different patchline
-
-```bash
-sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup --patchline pre-release'
-```
-
-Available patchlines are listed by the underlying downloader — see [QUICKSTART.md in the Hytale downloader archive](https://downloader.hytale.com/hytale-downloader.zip) for the current list.
+For normal updates you don't need this — the running server uses its own session credentials (cached in `Server/auth.enc`) independent of the downloader's tokens.
 
 ## Admin console (`hytalectl`)
 
