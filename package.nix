@@ -1,6 +1,6 @@
 { lib
 , writeShellApplication
-, jdk25
+, jdk25_headless
 , bash
 , coreutils
 }:
@@ -9,9 +9,12 @@
 # start.sh (which lives in the dataDir alongside HytaleServer.jar). The
 # vendor script handles staged updates, exit-code-8 restarts, backups, and
 # the AOT cache — reimplementing any of that in Nix invites drift.
+#
+# Uses jdk25_headless (no X11/AWT/GUI libs) — a dedicated server needs none
+# of that, and it shaves ~250 MB off the closure vs. the full JDK.
 writeShellApplication {
   name = "hytale-server";
-  runtimeInputs = [ jdk25 bash coreutils ];
+  runtimeInputs = [ jdk25_headless bash coreutils ];
   text = ''
     # The working directory (systemd sets it) must contain the extracted
     # server.zip layout: start.sh, Server/HytaleServer.jar, Assets.zip.

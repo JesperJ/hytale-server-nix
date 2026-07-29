@@ -81,14 +81,18 @@ in
     };
 
     heapSize = lib.mkOption {
-      type = lib.types.str;
+      # JVM syntax: digits followed by a single unit suffix (k/K, m/M, g/G).
+      # Rejects "4 GB", "large", or plain "4096" at eval time rather than
+      # letting the JVM fail with a cryptic "Invalid initial heap size" at
+      # service start.
+      type = lib.types.strMatching "[0-9]+[kKmMgG]";
       default = "4G";
       example = "8G";
       description = ''
-        JVM heap size (used for both `-Xms` and `-Xmx`). Written into
-        `<dataDir>/jvm.options`, which the vendor `start.sh` picks up.
-        Rough guidance: 4G for 1–10 players, 8–12G for 25–50, 16G+ for
-        larger servers.
+        JVM heap size (used for both `-Xms` and `-Xmx`). Digits followed by
+        a `k`/`m`/`g` suffix (KB/MB/GB). Written into `<dataDir>/jvm.options`,
+        which the vendor `start.sh` picks up. Rough guidance: 4G for 1–10
+        players, 8–12G for 25–50, 16G+ for larger servers.
       '';
     };
 
@@ -114,11 +118,13 @@ in
 
     users.groups.${cfg.group} = { };
 
-    # Expose all three commands system-wide. `hytale-setup` for first install;
-    # `hytale-server` for running the server interactively (still occasionally
-    # useful for debugging); and `hytalectl` for sending admin commands to the
-    # running systemd service.
-    environment.systemPackages = [ cfg.package cfg.setupPackage cfg.ctlPackage ];
+    # Expose all three commands system-wide. `hytale-setup` for first install
+    # (x86_64-only — Hytale's downloader binary is amd64); `hytale-server` for
+    # running the server interactively (still occasionally useful for
+    # debugging); `hytalectl` for sending admin commands to the running
+    # systemd service.
+    environment.systemPackages = [ cfg.package cfg.ctlPackage ]
+      ++ lib.optional (pkgs.stdenv.hostPlatform.system == "x86_64-linux") cfg.setupPackage;
 
     systemd.tmpfiles.rules = [
       "d '${cfg.dataDir}' 0750 ${cfg.user} ${cfg.group} - -"
@@ -150,6 +156,15 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
 
+      # bindsTo ties the service's liveness to the socket unit's: if the
+      # socket is stopped (which removes the FIFO via RemoveOnStop), the
+      # service stops with it — otherwise we'd end up with a running server
+      # whose stdin points at a gone inode, and hytalectl silently failing
+      # while the service looks healthy. BindsTo is a [Unit] directive, so
+      # it lives here at the top level (or under unitConfig), NOT under
+      # serviceConfig — systemd silently ignores unknown keys per section.
+      bindsTo = [ "hytale-server.socket" ];
+
       # Regenerate jvm.options on every start so option changes take effect
       # on `nixos-rebuild switch` + service restart (no manual edits needed).
       preStart = ''
@@ -173,14 +188,7 @@ in
         # Wire the socket-provided FIFO as this service's stdin, so anything
         # `hytalectl` writes to /run/hytale-server-console lands on the JVM's
         # System.in via start.sh's transparent stdin passthrough.
-        #
-        # BindsTo ties the service's liveness to the socket unit's: if the
-        # socket is stopped (which removes the FIFO thanks to RemoveOnStop),
-        # the service stops with it — otherwise we'd end up with a running
-        # server whose stdin points at a gone inode, and hytalectl silently
-        # failing while the service looks healthy.
         Sockets = "hytale-server.socket";
-        BindsTo = "hytale-server.socket";
         StandardInput = "socket";
         StandardOutput = "journal";
         StandardError = "journal";
