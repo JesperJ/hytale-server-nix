@@ -40,11 +40,13 @@ in
     };
 
     fifoPath = lib.mkOption {
-      type = lib.types.path;
+      # Runtime absolute path (nothing to do with Nix store paths, so
+      # lib.types.path is misleading here); enforce leading slash.
+      type = lib.types.strMatching "^/.+";
       default = "/run/hytale-server-console";
       description = ''
-        Path to the console FIFO. Both the systemd socket unit and the
-        `hytalectl` client default to this path — they stay in sync
+        Absolute path to the console FIFO. Both the systemd socket unit and
+        the `hytalectl` client default to this path — they stay in sync
         because the module passes this value into both.
       '';
     };
@@ -165,10 +167,26 @@ in
       };
     };
 
-    systemd.services.hytale-server = {
+    systemd.services.hytale-server = let
+      # Build jvm.options as a store file so its content is a pure function
+      # of the module options. `pkgs.writeText` also sidesteps the trailing
+      # blank line an in-heredoc `concatStringsSep` would leave when
+      # extraJvmOpts is empty.
+      jvmOptsFile = pkgs.writeText "jvm.options" (
+        (lib.concatStringsSep "\n" ([
+          "# Managed by services.hytale-server — edits will be overwritten."
+          "-Xms${cfg.heapSize}"
+          "-Xmx${cfg.heapSize}"
+        ] ++ cfg.extraJvmOpts)) + "\n"
+      );
+    in {
       description = "Hytale dedicated server";
       wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
+      # `after` on the socket is technically redundant — `Sockets=` on the
+      # service adds an implicit After= — but making the ordering explicit
+      # here means direct `systemctl start hytale-server.service` (bypassing
+      # socket activation) also sequences correctly.
+      after = [ "network-online.target" "hytale-server.socket" ];
       wants = [ "network-online.target" ];
 
       # bindsTo ties the service's liveness to the socket unit's: if the
@@ -180,16 +198,11 @@ in
       # serviceConfig — systemd silently ignores unknown keys per section.
       bindsTo = [ "hytale-server.socket" ];
 
-      # Regenerate jvm.options on every start so option changes take effect
-      # on `nixos-rebuild switch` + service restart (no manual edits needed).
+      # Install jvm.options into the state dir on every start so option
+      # changes take effect on `nixos-rebuild switch` + service restart.
       # $STATE_DIRECTORY is set by systemd from StateDirectory=hytale-server.
       preStart = ''
-        cat > "$STATE_DIRECTORY/jvm.options" <<EOF
-        # Managed by services.hytale-server — edits will be overwritten.
-        -Xms${cfg.heapSize}
-        -Xmx${cfg.heapSize}
-        ${lib.concatStringsSep "\n" cfg.extraJvmOpts}
-        EOF
+        install -m 0644 ${jvmOptsFile} "$STATE_DIRECTORY/jvm.options"
       '';
 
       serviceConfig = {
