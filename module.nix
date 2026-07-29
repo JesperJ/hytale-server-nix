@@ -198,6 +198,16 @@ in
       # serviceConfig — systemd silently ignores unknown keys per section.
       bindsTo = [ "hytale-server.socket" ];
 
+      # PropagatesStopTo goes the other direction from bindsTo: stopping the
+      # service also stops the socket. Without this, `systemctl stop
+      # hytale-server` leaves the socket listening on the FIFO, which prints
+      # "triggering units are still active" and can silently re-launch the
+      # service on the next write. Combined with bindsTo above, the service
+      # and socket now move as a pair — `systemctl start/stop hytale-server`
+      # Just Works. NixOS doesn't expose a friendly attr for this (unlike
+      # `bindsTo`), so we set the raw [Unit] key via unitConfig.
+      unitConfig.PropagatesStopTo = "hytale-server.socket";
+
       # Install jvm.options into the state dir on every start so option
       # changes take effect on `nixos-rebuild switch` + service restart.
       # $STATE_DIRECTORY is set by systemd from StateDirectory=hytale-server.
