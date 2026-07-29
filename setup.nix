@@ -22,6 +22,15 @@ writeShellApplication {
   text = ''
     set -euo pipefail
 
+    # The Hytale downloader zip only ships a linux-amd64 binary. Fail early
+    # on other architectures rather than exploding halfway through unzip.
+    ARCH="$(uname -m)"
+    if [ "$ARCH" != "x86_64" ]; then
+      echo "hytale-setup: unsupported architecture: $ARCH" >&2
+      echo "              The Hytale downloader only ships a linux-amd64 build." >&2
+      exit 1
+    fi
+
     DOWNLOADER_URL="https://downloader.hytale.com/hytale-downloader.zip"
     WORKDIR="$(pwd)"
     STAGING="$WORKDIR/.hytale-setup-staging"
@@ -127,7 +136,9 @@ writeShellApplication {
   meta = with lib; {
     description = "Bootstrap installer for a Hytale dedicated server";
     license = licenses.mit;
-    platforms = platforms.linux;
+    # The upstream downloader zip only ships hytale-downloader-linux-amd64.
+    # Restrict accordingly; hytale-server and hytalectl remain multi-arch.
+    platforms = [ "x86_64-linux" ];
     mainProgram = "hytale-setup";
   };
 }

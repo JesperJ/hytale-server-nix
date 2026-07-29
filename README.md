@@ -41,9 +41,9 @@ A Nix flake and NixOS module for running a [Hytale](https://hytale.com) dedicate
   services.hytale-server = {
     enable = true;
     heapSize = "4G";
-    # dataDir = "/var/lib/hytale-server";   # default
+    openFirewall = true;                     # required for players to reach the server
+    # dataDir = "/var/lib/hytale-server";    # default
     # port = 5520;                           # default (UDP only)
-    # openFirewall = true;                   # default
     # extraJvmOpts = [ "-XX:+UseG1GC" ];     # optional
   };
 }
@@ -167,7 +167,7 @@ Anyone in the group named by `consoleGroup` (default `wheel`) can write to the F
 | `dataDir` | path | `/var/lib/hytale-server` | Working directory. |
 | `user` / `group` | str | `hytale` | System user/group. |
 | `port` | port | `5520` | UDP port. |
-| `openFirewall` | bool | `true` | Open `port` in the firewall (UDP). |
+| `openFirewall` | bool | `false` | Open `port` in the firewall (UDP). Off by default — set `true` unless you're routing traffic in some other way (Tailscale, reverse proxy, etc.). |
 | `consoleGroup` | str | `"wheel"` | Group allowed to send commands via `hytalectl`. |
 | `heapSize` | str | `"4G"` | Both `-Xms` and `-Xmx`; written to `jvm.options`. |
 | `extraJvmOpts` | list str | `[]` | Extra lines appended to `jvm.options`. |

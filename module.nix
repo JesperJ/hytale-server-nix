@@ -2,9 +2,6 @@
 
 let
   cfg = config.services.hytale-server;
-  hytalePkg = pkgs.callPackage ./package.nix { };
-  hytaleSetup = pkgs.callPackage ./setup.nix { };
-  hytalectlPkg = pkgs.callPackage ./console.nix { };
   consoleFifo = "/run/hytale-server-console";
 in
 {
@@ -13,9 +10,23 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = hytalePkg;
+      default = pkgs.callPackage ./package.nix { };
       defaultText = lib.literalExpression "pkgs.callPackage ./package.nix { }";
       description = "The hytale-server runtime wrapper package.";
+    };
+
+    setupPackage = lib.mkOption {
+      type = lib.types.package;
+      default = pkgs.callPackage ./setup.nix { };
+      defaultText = lib.literalExpression "pkgs.callPackage ./setup.nix { }";
+      description = "The hytale-setup bootstrap installer package.";
+    };
+
+    ctlPackage = lib.mkOption {
+      type = lib.types.package;
+      default = pkgs.callPackage ./console.nix { };
+      defaultText = lib.literalExpression "pkgs.callPackage ./console.nix { }";
+      description = "The hytalectl admin-console client package.";
     };
 
     dataDir = lib.mkOption {
@@ -48,8 +59,14 @@ in
 
     openFirewall = lib.mkOption {
       type = lib.types.bool;
-      default = true;
-      description = "Whether to open the configured UDP port in the firewall.";
+      default = false;
+      description = ''
+        Whether to open the configured UDP port in the firewall. Off by
+        default — set to `true` if players need to reach the server
+        directly. A game server that isn't reachable does nothing, so
+        this is usually what you want; it's opt-in to match NixOS
+        convention (explicit exposure).
+      '';
     };
 
     consoleGroup = lib.mkOption {
@@ -97,10 +114,11 @@ in
 
     users.groups.${cfg.group} = { };
 
-    # Expose all three commands system-wide. `hytale-setup` for first install
-    # and updates; `hytale-server` for running the server interactively; and
-    # `hytalectl` for sending admin commands to the running systemd service.
-    environment.systemPackages = [ cfg.package hytaleSetup hytalectlPkg ];
+    # Expose all three commands system-wide. `hytale-setup` for first install;
+    # `hytale-server` for running the server interactively (still occasionally
+    # useful for debugging); and `hytalectl` for sending admin commands to the
+    # running systemd service.
+    environment.systemPackages = [ cfg.package cfg.setupPackage cfg.ctlPackage ];
 
     systemd.tmpfiles.rules = [
       "d '${cfg.dataDir}' 0750 ${cfg.user} ${cfg.group} - -"
