@@ -75,7 +75,7 @@ in
       description = ''
         Group allowed to send commands to the server via `hytalectl`. The
         console FIFO at ${consoleFifo} is created with mode `0620`, owner
-        `${"${cfg.user}"}`, group `<this>` — group members can write commands
+        `${cfg.user}`, group `<this>` — group members can write commands
         but not read the FD.
       '';
     };

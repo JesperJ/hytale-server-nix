@@ -19,8 +19,6 @@ writeShellApplication {
   name = "hytale-setup";
   runtimeInputs = [ curl unzip coreutils ];
   text = ''
-    set -euo pipefail
-
     # The Hytale downloader zip only ships a linux-amd64 binary. Fail early
     # on other architectures rather than exploding halfway through unzip.
     ARCH="$(uname -m)"

@@ -17,8 +17,6 @@ writeShellApplication {
   name = "hytalectl";
   runtimeInputs = [ coreutils ];
   text = ''
-    set -euo pipefail
-
     FIFO="''${HYTALECTL_FIFO:-/run/hytale-server-console}"
 
     if [ ! -p "$FIFO" ]; then
@@ -52,7 +50,16 @@ writeShellApplication {
       exit 0
     fi
 
-    send "$*"
+    # Skip whitespace-only invocations (parity with the stdin path above,
+    # and avoids poking the server with a bare newline).
+    cmd="$*"
+    stripped="''${cmd//[[:space:]]/}"
+    if [ -z "$stripped" ]; then
+      echo "hytalectl: empty command" >&2
+      exit 2
+    fi
+
+    send "$cmd"
 
     echo "hytalectl: command sent. Watch response with: journalctl -fu hytale-server" >&2
   '';
