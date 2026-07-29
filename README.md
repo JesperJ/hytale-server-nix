@@ -5,7 +5,8 @@ A Nix flake and NixOS module for running a [Hytale](https://hytale.com) dedicate
 ## What it does
 
 - Provides a NixOS module (`services.hytale-server`) that runs the vendor `start.sh` as a hardened systemd service under a dedicated system user, with the firewall opened for UDP 5520.
-- Ships a `hytale-setup` command that downloads Hytale's official downloader, authenticates against your Hytale account (OAuth2 device-code flow), fetches the latest server archive, and extracts it into the service's `dataDir`.
+- Ships `hytale-setup` for downloading the server files (runs Hytale's official downloader with OAuth2 device-code auth against your account, extracts the archive into `dataDir`).
+- Ships `hytalectl` for sending admin commands to the running service (`op`, `world`, `whitelist`, `auth login device`, etc.) via a systemd-managed FIFO — no need to attach to the process manually.
 
 ## What it does NOT do
 
@@ -67,7 +68,7 @@ sudo systemctl start hytale-server
 sudo journalctl -fu hytale-server
 ```
 
-### 5. Authenticate the server (one-time, semi-automated)
+### 5. Authenticate the server
 
 Fresh installs also need a one-time server-side auth against Hypixel's session infrastructure — separate from the downloader auth in step 3. Without it, you'll see this in the journal on every boot:
 
@@ -75,34 +76,30 @@ Fresh installs also need a one-time server-side auth against Hypixel's session i
 [WARN] [HytaleServer] No server tokens configured. Use /auth login to authenticate.
 ```
 
-`hytale-setup auth` wraps the ceremony. It refuses to run while the systemd service is active, so stop the service first:
+With the service running, send the auth command via `hytalectl` and watch the journal for the URL + code:
 
 ```bash
-sudo systemctl stop hytale-server
-sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup auth'
+hytalectl auth login device
+journalctl -fu hytale-server
 ```
 
-The script prints instructions, then launches the server in interactive mode. When you see `Hytale Server Booted!`, type at the prompt (this is an in-server console command, not a shell command):
+The server prints something like:
 
 ```
-/auth login device
+DEVICE AUTHORIZATION
+Visit: https://accounts.hytale.com/device
+Enter code: ABCD-1234
 ```
 
-The server prints a URL and a short code. Open the URL in any browser, sign in with your Hytale account, enter the code, and wait for:
+Open the URL in any browser, sign in with your Hytale account, and enter the code. Wait for:
 
 ```
 [ServerAuthManager] Authentication successful! Mode: OAUTH_STORE
 ```
 
-Then type `/stop`. Control returns to `hytale-setup auth`, which prints the next step:
+Done. The token is cached as `Server/auth.enc` (encrypted) and picked up automatically on subsequent starts. The `No server tokens configured` warning should be gone; look for `Session restored from stored credentials` instead.
 
-```bash
-sudo systemctl start hytale-server
-```
-
-The token is cached as `Server/auth.enc` (encrypted) and picked up automatically on subsequent starts. The `No server tokens configured` warning should be gone; look for `Session restored from stored credentials` instead.
-
-Other `/auth` subcommands available at the interactive prompt: `status`, `login browser`, `select <profile>`, `logout`, `cancel`, `persistence <type>`. Append `--help` to any for details.
+Other `/auth` subcommands available: `hytalectl auth status`, `hytalectl auth logout`, `hytalectl auth cancel`, etc.
 
 ## Updating the game
 

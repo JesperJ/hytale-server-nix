@@ -4,10 +4,9 @@
 , unzip
 , coreutils
 , findutils
-, systemd
 }:
 
-# One-shot installer / updater / auth-helper for the Hytale dedicated server.
+# Installer / updater for the Hytale dedicated server.
 #
 # Subcommands:
 #   install (default)  Fetch the Hytale downloader, run its OAuth2 device-code
@@ -15,16 +14,15 @@
 #                      into the current directory.
 #   update             Alias for `install --update` (non-interactive; assumes
 #                      cached credentials).
-#   auth               Wrap the one-time `/auth login device` ceremony. Aborts
-#                      if the systemd service is running, then launches the
-#                      vendor start.sh interactively so the user can type
-#                      `/auth login device` and `/stop`.
+#
+# Server-side auth (`/auth login device`) is done via `hytalectl` against the
+# running systemd service — no dance required.
 #
 # Run as the hytale user in the service's dataDir, e.g.:
 #   sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup'
 writeShellApplication {
   name = "hytale-setup";
-  runtimeInputs = [ curl unzip coreutils findutils systemd ];
+  runtimeInputs = [ curl unzip coreutils findutils ];
   text = ''
     set -euo pipefail
 
@@ -37,12 +35,11 @@ writeShellApplication {
 
     usage() {
       cat <<EOF
-    hytale-setup — install, update, or authenticate a Hytale dedicated server.
+    hytale-setup — install or update a Hytale dedicated server.
 
     Usage:
       hytale-setup [install] [--patchline <name>] [--force-auth]
       hytale-setup update    [--patchline <name>]
-      hytale-setup auth
       hytale-setup --help
 
     Subcommands:
@@ -51,14 +48,13 @@ writeShellApplication {
                           afterwards.
       update              Refresh server files from the latest patchline build.
                           Fails if no credentials are cached.
-      auth                Run the one-time in-server /auth login device flow.
-                          Must be done once before players can connect.
 
     Options:
       -p, --patchline <name>   Patchline to download (default: release)
       --force-auth             Delete cached downloader credentials and
                                re-authenticate against the downloader (not to
-                               be confused with the server-side /auth flow).
+                               be confused with server-side /auth — use
+                               \`hytalectl auth login device\` for that).
       -h, --help               Show this help
 
     Files created in the current directory:
@@ -66,6 +62,7 @@ writeShellApplication {
       .hytale-downloader-credentials.json   OAuth2 tokens for the downloader
       start.sh, Server/, Assets.zip         Extracted server files
       Server/auth.enc                       Encrypted server-side auth token
+                                            (created after 'hytalectl auth login device')
 
     See: https://downloader.hytale.com/hytale-downloader.zip (QUICKSTART.md)
     EOF
@@ -74,12 +71,12 @@ writeShellApplication {
     # Parse subcommand (first positional) — default `install`.
     SUBCMD="install"
     case "''${1:-}" in
-      install|update|auth) SUBCMD="$1"; shift ;;
-      -h|--help)           usage; exit 0 ;;
-      "")                  ;;
-      -*)                  ;;  # Leave flag parsing to the loop below.
-      *)                   echo "hytale-setup: unknown subcommand: $1" >&2
-                           usage >&2; exit 2 ;;
+      install|update)  SUBCMD="$1"; shift ;;
+      -h|--help)       usage; exit 0 ;;
+      "")              ;;
+      -*)              ;;  # Leave flag parsing to the loop below.
+      *)               echo "hytale-setup: unknown subcommand: $1" >&2
+                       usage >&2; exit 2 ;;
     esac
 
     PATCHLINE="release"
@@ -97,80 +94,6 @@ writeShellApplication {
                         usage >&2; exit 2 ;;
       esac
     done
-
-    # ------- Subcommand: auth -------------------------------------------------
-
-    if [ "$SUBCMD" = "auth" ]; then
-      if [ ! -f "$WORKDIR/start.sh" ]; then
-        echo "hytale-setup: $WORKDIR/start.sh not found — run 'hytale-setup install' first." >&2
-        exit 1
-      fi
-
-      # The service holds the UDP port and its own copy of auth.enc; running a
-      # second server instance while it's up would conflict. We can't stop it
-      # ourselves (needs root), so abort with a clear message.
-      if systemctl is-active --quiet "$SERVICE"; then
-        echo "hytale-setup: $SERVICE is currently running." >&2
-        echo "              Stop it first from an admin shell:" >&2
-        echo "                sudo systemctl stop $SERVICE" >&2
-        echo "              Then re-run: hytale-setup auth" >&2
-        exit 1
-      fi
-
-      if ! command -v hytale-server >/dev/null 2>&1; then
-        echo "hytale-setup: 'hytale-server' not found on PATH." >&2
-        echo "              This subcommand needs the hytale-server wrapper, which is" >&2
-        echo "              installed by the NixOS module when services.hytale-server" >&2
-        echo "              is enabled." >&2
-        exit 1
-      fi
-
-      cat <<'EOF'
-
-    ==> Launching Hytale server in interactive mode for one-time auth.
-
-        When you see the line:
-          [HytaleServer] Hytale Server Booted! [Multiplayer] took ...
-
-        Type at the prompt:
-          /auth login device
-
-        The server will print a short URL and 6–8 character code. Open the URL
-        in a browser, sign in with your Hytale account, and enter the code.
-
-        Wait for:
-          [ServerAuthManager] Authentication successful! Mode: OAUTH_STORE
-
-        Then type:
-          /stop
-
-        The server will shut down and control will return to this script.
-
-    EOF
-      read -r -p "Press Enter to launch the server..." _
-
-      # The wrapper (hytale-server) cds into $WORKDIR/Server implicitly via
-      # start.sh; we invoke it from the current dir so start.sh's SCRIPT_DIR
-      # resolves correctly.
-      set +e
-      hytale-server
-      RC=$?
-      set -e
-
-      echo ""
-      if [ $RC -eq 0 ]; then
-        echo "==> Server exited cleanly. Auth token cached at:"
-        echo "      $WORKDIR/Server/auth.enc"
-        echo ""
-        echo "    Next: sudo systemctl start $SERVICE"
-      else
-        echo "==> Server exited with code $RC. Check output above." >&2
-        exit $RC
-      fi
-      exit 0
-    fi
-
-    # ------- Subcommand: install / update -------------------------------------
 
     if [ "$FORCE_AUTH" = "1" ] && [ -f "$CREDS" ]; then
       echo "==> Removing cached downloader credentials..."
@@ -219,17 +142,18 @@ writeShellApplication {
     echo "      $WORKDIR/Assets.zip"
     echo ""
     if [ ! -f "$WORKDIR/Server/auth.enc" ]; then
-      echo "    Next: authenticate the server (one-time):"
-      echo "          hytale-setup auth"
+      echo "    Next: start the service and authenticate:"
       echo "          sudo systemctl start $SERVICE"
+      echo "          hytalectl auth login device"
+      echo "          journalctl -fu $SERVICE   # watch for the URL & code"
     else
       echo "    Next: sudo systemctl start $SERVICE"
-      echo "          sudo journalctl -fu $SERVICE"
+      echo "          journalctl -fu $SERVICE"
     fi
   '';
 
   meta = with lib; {
-    description = "Installer / updater / auth-helper for a Hytale dedicated server";
+    description = "Installer / updater for a Hytale dedicated server";
     license = licenses.mit;
     platforms = platforms.linux;
     mainProgram = "hytale-setup";
