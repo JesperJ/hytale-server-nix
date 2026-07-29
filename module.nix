@@ -173,7 +173,14 @@ in
         # Wire the socket-provided FIFO as this service's stdin, so anything
         # `hytalectl` writes to /run/hytale-server-console lands on the JVM's
         # System.in via start.sh's transparent stdin passthrough.
+        #
+        # BindsTo ties the service's liveness to the socket unit's: if the
+        # socket is stopped (which removes the FIFO thanks to RemoveOnStop),
+        # the service stops with it — otherwise we'd end up with a running
+        # server whose stdin points at a gone inode, and hytalectl silently
+        # failing while the service looks healthy.
         Sockets = "hytale-server.socket";
+        BindsTo = "hytale-server.socket";
         StandardInput = "socket";
         StandardOutput = "journal";
         StandardError = "journal";

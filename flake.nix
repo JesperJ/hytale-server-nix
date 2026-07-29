@@ -16,9 +16,13 @@
         let pkgs = nixpkgs.legacyPackages.${system};
         in rec {
           hytale-server = pkgs.callPackage ./package.nix { };
-          hytale-setup = pkgs.callPackage ./setup.nix { };
           hytalectl = pkgs.callPackage ./console.nix { };
           default = hytale-server;
+        } // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          # Hytale's downloader zip only ships hytale-downloader-linux-amd64,
+          # so the bootstrap installer is x86_64-only. hytale-server and
+          # hytalectl remain multi-arch.
+          hytale-setup = pkgs.callPackage ./setup.nix { };
         });
 
       nixosModules.hytale-server = hytaleModule;

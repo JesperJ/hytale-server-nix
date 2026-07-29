@@ -3,7 +3,6 @@
 , curl
 , unzip
 , coreutils
-, findutils
 }:
 
 # Bootstrap installer for the Hytale dedicated server.
@@ -18,7 +17,7 @@
 #   sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup'
 writeShellApplication {
   name = "hytale-setup";
-  runtimeInputs = [ curl unzip coreutils findutils ];
+  runtimeInputs = [ curl unzip coreutils ];
   text = ''
     set -euo pipefail
 
