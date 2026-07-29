@@ -120,15 +120,23 @@ hytalectl update download
 hytalectl update apply --confirm
 ```
 
-## Re-authenticating the downloader
+## Re-authenticating
 
-`hytale-setup` uses your Hytale account's OAuth2 tokens to fetch the initial server payload. If those tokens ever break (revoked, expired beyond refresh), and you need to re-bootstrap:
+The server and the downloader have separate credentials — different failure modes, different fixes.
+
+**Server session credentials** (`Server/auth.enc`, used by the running server for all in-game and session-service traffic — updates, player joins, etc.). If these break — the journal will complain about auth failures or players get kicked — re-auth via `hytalectl`:
+
+```bash
+hytalectl auth logout
+hytalectl auth login device
+journalctl -fu hytale-server        # watch for the URL & code
+```
+
+**Downloader OAuth tokens** (`.hytale-downloader-credentials.json`, used only by the initial `hytale-setup` bootstrap). Almost never break in practice — only relevant if you need to re-bootstrap from scratch and the token has been revoked:
 
 ```bash
 sudo -u hytale -H bash -c 'cd /var/lib/hytale-server && hytale-setup --force-auth'
 ```
-
-For normal updates you don't need this — the running server uses its own session credentials (cached in `Server/auth.enc`) independent of the downloader's tokens.
 
 ## Admin console (`hytalectl`)
 
